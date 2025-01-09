@@ -20,7 +20,7 @@ const wss = new WebSocket.Server({ port: 2999 });
 
 // Enable CORS for frontend requests
 app.use(cors({
-  origin: ['http://localhost:5173'], // Vite's default port
+  origin: ['http://localhost:5173' , 'https://dexboost.xyz', 'https://www.dexboost.xyz'], // Vite's default port
   methods: ['GET', 'POST'],
   credentials: true
 }));
