@@ -151,4 +151,6 @@ app.get('/api/pin-order/:orderId', async (req, res) => {
         console.error('Error getting pin order status:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
-}); 
+});
+
+export { app }; 
