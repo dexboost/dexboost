@@ -8,7 +8,6 @@ import {
   TableRow,
 } from "./ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 import { formatDistance } from 'date-fns/formatDistance';
 import { useToast } from "./ui/use-toast";
