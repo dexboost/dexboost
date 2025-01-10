@@ -1,6 +1,7 @@
-import express, { Request, Response } from "express";
-import cors from "cors";
-import WebSocket from "ws";
+import express, { Request as ExpressRequest, Response as ExpressResponse, Application } from "express";
+import cors, { CorsOptions } from "cors";
+import { createServer } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
 import { 
   selectAllTokens, 
   createPinOrder, 
@@ -14,22 +15,44 @@ import {
   canTokenBePinned
 } from "./db";
 import { verifyPayment } from "./transactions";
+import dotenv from 'dotenv';
 
-const app = express();
-const wss = new WebSocket.Server({ port: 2999 });
+// Load environment variables based on NODE_ENV
+dotenv.config({
+  path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development'
+});
+
+interface TypedRequest<T> extends ExpressRequest {
+  body: T;
+}
+
+interface TypedResponse extends ExpressResponse {
+  json: (body: any) => TypedResponse;
+  status: (code: number) => TypedResponse;
+}
+
+const app: Application = express();
+const server = createServer(app);
+const wss = new WebSocketServer({ server });  // Attach WebSocket to HTTP server
+
+const corsOptions: CorsOptions = {
+  origin: process.env.CORS_ORIGINS?.split(',') || [
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
 
 // Enable CORS for frontend requests
-app.use(cors({
-  origin: ['http://localhost:5173' , 'https://dexboost.xyz', 'https://www.dexboost.xyz'], // Vite's default port
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
+app.use(cors(corsOptions));
 
 // Parse JSON bodies
 app.use(express.json());
 
 // Create pin order endpoint
-app.post('/api/pin-order', async (req: Request<any, any, { tokenAddress: string; hours: number; cost: number }>, res: Response) => {
+app.post('/api/pin-order', async (req: TypedRequest<{ tokenAddress: string; hours: number; cost: number }>, res: TypedResponse) => {
   const { tokenAddress, hours, cost } = req.body;
 
   if (!tokenAddress || !hours || !cost) {
@@ -153,4 +176,4 @@ app.get('/api/pin-order/:orderId', async (req, res) => {
     }
 });
 
-export { app }; 
+export { app, server, wss }; 
