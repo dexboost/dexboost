@@ -61,9 +61,9 @@ app.post('/api/pin-order', async (req: Request, res: Response) => {
     try {
         const order = await createPinOrder(tokenAddress, hours, cost, userIp);
         res.json(order);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error creating pin order:', error);
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: error.message || 'Unknown error occurred' });
     }
 });
 
