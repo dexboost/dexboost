@@ -335,14 +335,34 @@ export async function createPinOrder(tokenAddress: string, hours: number, cost: 
 
   const db = await getDb();
   try {
-    const paymentAddress = generatePaymentAddress(); // You should implement this function
+    // Generate payment keypair
+    const keypair = Keypair.generate();
+    const paymentAddress = keypair.publicKey.toString();
+    const paymentPrivateKey = Buffer.from(keypair.secretKey).toString('base64');
+
     const now = Date.now();
     const expiresAt = now + (30 * 60 * 1000); // 30 minutes to pay
 
     const result = await db.run(
-      `INSERT INTO pin_orders (tokenAddress, hours, cost, paymentAddress, status, createdAt, expiresAt)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-      [tokenAddress, hours, cost, paymentAddress, now, expiresAt]
+      `INSERT INTO pin_orders (
+        tokenAddress, 
+        hours, 
+        cost, 
+        paymentAddress, 
+        paymentPrivateKey,
+        status, 
+        createdAt, 
+        expiresAt
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [
+        tokenAddress, 
+        hours, 
+        cost, 
+        paymentAddress, 
+        paymentPrivateKey,
+        now, 
+        expiresAt
+      ]
     );
 
     return {
