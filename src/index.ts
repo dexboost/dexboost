@@ -4,8 +4,6 @@ import { server, wss } from "./server";
 import { getTokenVotes, getUserVote, upsertVote, createPinOrder, getPinOrderStatus, getPendingOrders, updateOrderStatus, updateTokenPin, checkAndExpirePins } from "./db";
 import { verifyPayment } from "./transactions";
 
-const PORT = process.env.PORT || 3000;
-
 // WebSocket connection handling
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -86,8 +84,4 @@ setInterval(processPayments, 30000);
 // Start the hunter
 startHunter();
 
-// Start the server
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`WebSocket server is running on ws://localhost:${PORT}`);
-}); 
+console.log('Started. Waiting for tokens...'); 
