@@ -54,23 +54,17 @@ app.options('*', cors(corsOptions));
 app.use(express.json() as RequestHandler);
 
 // Create pin order endpoint
-app.post('/api/pin-order', async (
-  req: TypedRequestBody<{ tokenAddress: string; hours: number; cost: number }>,
-  res: Response
-) => {
-  const { tokenAddress, hours, cost } = req.body;
+app.post('/api/pin-order', async (req: Request, res: Response) => {
+    const { tokenAddress, hours, cost } = req.body;
+    const userIp = req.ip || req.socket.remoteAddress || 'unknown';
 
-  if (!tokenAddress || !hours || !cost) {
-    return res.status(400).json({ error: 'Missing required parameters' });
-  }
-
-  try {
-    const order = await createPinOrder(tokenAddress, hours, cost);
-    res.json(order);
-  } catch (error) {
-    console.error('Error creating pin order:', error);
-    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to create pin order' });
-  }
+    try {
+        const order = await createPinOrder(tokenAddress, hours, cost, userIp);
+        res.json(order);
+    } catch (error) {
+        console.error('Error creating pin order:', error);
+        res.status(400).json({ error: error.message });
+    }
 });
 
 // Add background job to check pending payments

@@ -260,54 +260,61 @@ export async function getUserVote(tokenAddress: string, userIp: string): Promise
 }
 
 // Create a new pin order
-export async function createPinOrder(tokenAddress: string, hours: number, cost: number): Promise<any> {
-  if (!(await canTokenBePinned())) {
-    throw new Error('Maximum number of pinned tokens reached (3). Please wait for a pin to expire.');
-  }
+export async function createPinOrder(
+    tokenAddress: string, 
+    hours: number, 
+    cost: number,
+    userIp: string
+): Promise<any> {
+    if (!(await canTokenBePinned())) {
+        throw new Error('Maximum number of pinned tokens reached (3). Please wait for a pin to expire.');
+    }
 
-  const db = await getDb();
-  try {
-    // Generate payment keypair
-    const keypair = Keypair.generate();
-    const paymentAddress = keypair.publicKey.toString();
-    const paymentPrivateKey = Buffer.from(keypair.secretKey).toString('base64');
+    const db = await getDb();
+    try {
+        // Generate payment keypair
+        const keypair = Keypair.generate();
+        const paymentAddress = keypair.publicKey.toString();
+        const paymentPrivateKey = Buffer.from(keypair.secretKey).toString('base64');
 
-    const now = Date.now();
-    const expiresAt = now + (30 * 60 * 1000); // 30 minutes to pay
+        const now = Date.now();
+        const expiresAt = now + (30 * 60 * 1000); // 30 minutes to pay
 
-    const result = await db.run(
-      `INSERT INTO pin_orders (
-        tokenAddress, 
-        hours, 
-        cost, 
-        paymentAddress, 
-        paymentPrivateKey,
-        status, 
-        createdAt, 
-        expiresAt
-      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
-      [
-        tokenAddress, 
-        hours, 
-        cost, 
-        paymentAddress, 
-        paymentPrivateKey,
-        now, 
-        expiresAt
-      ]
-    );
+        const result = await db.run(
+            `INSERT INTO pin_orders (
+                tokenAddress, 
+                hours, 
+                cost, 
+                paymentAddress, 
+                paymentPrivateKey,
+                status, 
+                createdAt, 
+                expiresAt,
+                userIp
+            ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+            [
+                tokenAddress, 
+                hours, 
+                cost, 
+                paymentAddress, 
+                paymentPrivateKey,
+                now, 
+                expiresAt,
+                userIp
+            ]
+        );
 
-    return {
-      id: result.lastID,
-      paymentAddress,
-      expiresAt
-    };
-  } catch (error) {
-    console.error('Error creating pin order:', error);
-    throw error;
-  } finally {
-    await db.close();
-  }
+        return {
+            id: result.lastID,
+            paymentAddress,
+            expiresAt
+        };
+    } catch (error) {
+        console.error('Error creating pin order:', error);
+        throw error;
+    } finally {
+        await db.close();
+    }
 }
 
 // Get order status
