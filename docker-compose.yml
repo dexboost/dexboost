@@ -10,5 +10,4 @@ services:
     volumes:
       - ./src/data:/app/src/data
     environment:
-      - NODE_ENV=production
-    user: "1000:1000"  # Replace 1000 with the actual UID from the id command 
+      - NODE_ENV=production 
