@@ -6,79 +6,11 @@ import { broadcast } from './index.js';
 import { Keypair } from '@solana/web3.js';
 
 // Helper function to get database connection
-async function getDb() {
-    const db = await open({
+export async function getDb() {
+    return await open({
         filename: config.settings.db_name_tracker,
         driver: sqlite3.Database
     });
-
-    // Create tokens table if it doesn't exist
-    await db.exec(`
-        CREATE TABLE IF NOT EXISTS tokens (
-            tokenName TEXT,
-            tokenAddress TEXT PRIMARY KEY,
-            url TEXT,
-            chainId TEXT,
-            icon TEXT,
-            header TEXT,
-            openGraph TEXT,
-            description TEXT,
-            marketCap REAL,
-            amount INTEGER,
-            totalAmount INTEGER,
-            pairsAvailable INTEGER,
-            dexPair TEXT,
-            currentPrice REAL,
-            liquidity REAL,
-            pairCreatedAt INTEGER,
-            tokenSymbol TEXT,
-            volume24h REAL,
-            volume6h REAL,
-            volume1h REAL,
-            links TEXT,
-            boosted INTEGER,
-            dateAdded INTEGER,
-            pinnedUntil INTEGER DEFAULT 0
-        )
-    `);
-
-    // Create orders table
-    await db.exec(`
-        CREATE TABLE IF NOT EXISTS pin_orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tokenAddress TEXT NOT NULL,
-            hours INTEGER NOT NULL,
-            cost REAL NOT NULL,
-            status TEXT NOT NULL, -- 'pending', 'paid', 'expired', 'completed'
-            paymentAddress TEXT NOT NULL,
-            paymentPrivateKey TEXT NOT NULL,
-            createdAt INTEGER NOT NULL,
-            paidAt INTEGER,
-            expiresAt INTEGER NOT NULL,
-            userIp TEXT NOT NULL
-        )
-    `);
-
-    // Add dateAdded column if it doesn't exist
-    try {
-        await db.exec(`ALTER TABLE tokens ADD COLUMN dateAdded INTEGER`);
-    } catch (error) {
-        // Column might already exist, ignore the error
-    }
-
-    // Create votes table if it doesn't exist
-    await db.exec(`
-        CREATE TABLE IF NOT EXISTS votes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tokenAddress TEXT,
-            userIp TEXT,
-            vote INTEGER, -- 1 for upvote, -1 for downvote
-            timestamp INTEGER,
-            UNIQUE(tokenAddress, userIp)
-        )
-    `);
-
-    return db;
 }
 
 // Tokens
