@@ -1,5 +1,6 @@
 import express from "express";
 import type { Application, Request, Response, RequestHandler } from "express";
+import type { ParamsDictionary } from "express-serve-static-core";
 import { Server } from 'http';
 import cors from "cors";
 import { WebSocketServer, WebSocket } from 'ws';
@@ -23,13 +24,8 @@ dotenv.config({
   path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development'
 });
 
-interface TypedRequestBody<T> extends Request {
-  body: T;
-}
-
-interface TypedRequestParams<P> extends Request<P> {
-  params: P;
-}
+type TypedRequestBody<T> = Request<ParamsDictionary, any, T>;
+type TypedRequestParams<P extends ParamsDictionary> = Request<P>;
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
