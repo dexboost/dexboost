@@ -142,19 +142,19 @@ export async function startHunter() {
                   if (x && !firstRun && token.totalAmount && config.settings.min_boost_amount <= token.totalAmount) {
                     // Check if Golden Ticker
                     let goldenTicker = "⚡";
-                    let goldenTickerColor = chalk.bgGray;
+                    let goldenTickerColor = blue;
                     if (updatedTokenProfile.totalAmount && updatedTokenProfile.totalAmount > 499) {
                       goldenTicker = "🔥";
-                      goldenTickerColor = chalk.bgYellowBright;
+                      goldenTickerColor = yellow;
                     }
 
                     // Check socials
                     let socialsIcon = "🔴";
-                    let socialsColor = chalk.bgGray;
+                    let socialsColor = blue;
                     let socialLenght = 0;
                     if (updatedTokenProfile.links && updatedTokenProfile.links.length > 0) {
                       socialsIcon = "🟢";
-                      socialsColor = chalk.greenBright;
+                      socialsColor = green;
                       socialLenght = updatedTokenProfile.links.length;
                     }
 
