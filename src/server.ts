@@ -1,5 +1,5 @@
 import express from "express";
-import type { Application, Request, Response } from "express";
+import type { Application, Request, Response, RequestHandler } from "express";
 import { Server } from 'http';
 import cors from "cors";
 import { WebSocketServer, WebSocket } from 'ws';
@@ -23,8 +23,13 @@ dotenv.config({
   path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development'
 });
 
-type TypedRequestBody<T> = Request<{}, {}, T>;
-type TypedResponse<T = any> = Response<T>;
+interface TypedRequestBody<T> extends Request {
+  body: T;
+}
+
+interface TypedRequestParams<P> extends Request<P> {
+  params: P;
+}
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
@@ -40,18 +45,20 @@ const corsOrigins = process.env.CORS_ORIGINS ?
   defaultOrigins;
 
 // Enable CORS and JSON parsing middleware
-app.use(cors({
+const corsMiddleware = cors({
   origin: corsOrigins,
   methods: ['GET', 'POST', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
+}) as RequestHandler;
+
+app.use(corsMiddleware);
+app.use(express.json() as RequestHandler);
 
 // Create pin order endpoint
 app.post('/api/pin-order', async (
   req: TypedRequestBody<{ tokenAddress: string; hours: number; cost: number }>,
-  res: TypedResponse
+  res: Response
 ) => {
   const { tokenAddress, hours, cost } = req.body;
 
@@ -105,7 +112,7 @@ setInterval(async () => {
 }, 10000); // Check every 10 seconds
 
 // Get all tokens endpoint
-app.get("/api/tokens", async (req, res) => {
+app.get("/api/tokens", async (_req: Request, res: Response) => {
     try {
         const tokens = await selectAllTokens();
         res.json(tokens);
@@ -116,7 +123,10 @@ app.get("/api/tokens", async (req, res) => {
 });
 
 // Add voting endpoint
-app.post('/api/vote', async (req: TypedRequestBody<{ tokenAddress: string; vote: 1 | -1 }>, res: TypedResponse) => {
+app.post('/api/vote', async (
+  req: TypedRequestBody<{ tokenAddress: string; vote: 1 | -1 }>,
+  res: Response
+) => {
     const { tokenAddress, vote } = req.body;
     const userIp = req.ip || req.socket.remoteAddress || 'unknown';
 
@@ -145,7 +155,10 @@ app.post('/api/vote', async (req: TypedRequestBody<{ tokenAddress: string; vote:
 });
 
 // Get user's vote endpoint
-app.get('/api/vote/:tokenAddress', async (req: Request, res: TypedResponse) => {
+app.get('/api/vote/:tokenAddress', async (
+  req: TypedRequestParams<{ tokenAddress: string }>,
+  res: Response
+) => {
     const { tokenAddress } = req.params;
     const userIp = req.ip || req.socket.remoteAddress || 'unknown';
 
@@ -160,7 +173,10 @@ app.get('/api/vote/:tokenAddress', async (req: Request, res: TypedResponse) => {
 });
 
 // Get pin order status endpoint
-app.get('/api/pin-order/:orderId', async (req, res) => {
+app.get('/api/pin-order/:orderId', async (
+  req: TypedRequestParams<{ orderId: string }>,
+  res: Response
+) => {
     const { orderId } = req.params;
 
     try {
