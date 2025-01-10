@@ -1,17 +1,15 @@
 [Unit]
-Description=DexBoost Backend Service
+Description=DexBoost Node.js Server
 After=network.target
 
 [Service]
 Type=simple
-User=nobody
-Group=nobody
+User=dexbo2374
+Group=dexbo2374
 WorkingDirectory=/home/dexboost
 ExecStart=/usr/bin/npm start
-Restart=always
 Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=CONFIG_FILE=/home/dexboost/src/config.prod.ts
+Restart=always
 
 [Install]
 WantedBy=multi-user.target 

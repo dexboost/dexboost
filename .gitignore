@@ -33,3 +33,7 @@ next-env.d.ts
 
 # db
 main.db
+
+# Docker
+.docker/
+docker-compose.override.yml
