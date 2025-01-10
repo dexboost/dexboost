@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 import { config } from "./config"; // Configuration parameters for our hunter
 import { RugResponse, TokenResponseType, detailedTokenResponseType, dexEndpoint, updatedDetailedTokenType } from "./types";
 import { selectTokenBoostAmounts, upsertTokenBoost } from "./db";
-import chalk from "chalk";
+import { red, green, yellow, blue } from 'colorette';
 import { getRugCheck } from "./transactions";
 
 // Load environment variables from the .env file
