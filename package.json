@@ -1,7 +1,6 @@
 {
   "name": "dexboost",
   "version": "1.0.0",
-  "type": "module",
   "main": "dist/app.js",
   "scripts": {
     "build": "tsc",
