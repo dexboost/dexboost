@@ -6,11 +6,13 @@ import { verifyPayment } from "./transactions";
 
 const PORT = process.env.PORT || 3000;
 
-// Start the server
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`WebSocket server is running on ws://localhost:${PORT}`);
-});
+// Only start the server if it's not already listening
+if (!server.listening) {
+    server.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+        console.log(`WebSocket server is running on ws://localhost:${PORT}`);
+    });
+}
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
