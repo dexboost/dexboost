@@ -10,4 +10,5 @@ services:
     volumes:
       - ./src/data:/app/src/data
     environment:
-      - NODE_ENV=production 
+      - NODE_ENV=production
+    user: "dexbo2374"  # Only if absolutely necessary 
