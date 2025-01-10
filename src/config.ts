@@ -1,6 +1,6 @@
 export const config = {
   settings: {
-    db_name_tracker: "src/data/main.db", // Sqlite Database location
+    db_name_tracker: "/var/www/api/dexboost/src/data/main.db", //"src/data/main.db",  Sqlite Database location
     hunter_timeout: 5000, // Seconds until hunter requests new data from endpoints
     api_get_timeout: 10000, // Timeout for API requests
     chains_to_track: ["solana"], // Chains that the hunter should track tokens for.
