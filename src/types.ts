@@ -80,6 +80,20 @@ export interface boostAmounts {
   amount: number; // Represents an integer value for amount
   amountTotal: number; // Represents an integer value for amountTotal
 }
+export interface Config {
+  settings: {
+      api_get_timeout: number;
+      db_name_tracker: string;
+      frontend_url: string;
+      api_url: string;
+  };
+  rug_check: {
+      verbose_log: boolean;
+  };
+  axios?: {
+      get_timeout: number;
+  };
+}
 export interface updatedDetailedTokenType {
   tokenName: string;
   tokenAddress: string;

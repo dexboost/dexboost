@@ -501,3 +501,9 @@ export async function canTokenBePinned(): Promise<boolean> {
   const pinnedCount = await getPinnedTokensCount();
   return pinnedCount < 3;
 }
+
+// Generate a new Solana address for payments
+function generatePaymentAddress(): string {
+  const keypair = Keypair.generate();
+  return keypair.publicKey.toString();
+}

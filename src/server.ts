@@ -1,6 +1,6 @@
-import express, { Request as ExpressRequest, Response as ExpressResponse, Application } from "express";
+import express, { Application, Request, Response } from "express";
+import { Server } from 'http';
 import cors, { CorsOptions } from "cors";
-import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { 
   selectAllTokens, 
@@ -22,18 +22,21 @@ dotenv.config({
   path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development'
 });
 
-interface TypedRequest<T> extends ExpressRequest {
+interface TypedRequest<T> extends Request {
   body: T;
 }
 
-interface TypedResponse extends ExpressResponse {
+interface TypedResponse extends Response {
   json: (body: any) => TypedResponse;
   status: (code: number) => TypedResponse;
 }
 
 const app: Application = express();
-const server = createServer(app);
-const wss = new WebSocketServer({ server });  // Attach WebSocket to HTTP server
+const PORT = process.env.PORT || 3000;
+const server: Server = app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+const wss = new WebSocketServer({ server });
 
 const corsOptions: CorsOptions = {
   origin: process.env.CORS_ORIGINS?.split(',') || [
@@ -45,11 +48,9 @@ const corsOptions: CorsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization']
 };
 
-// Enable CORS for frontend requests
-app.use(cors(corsOptions));
-
-// Parse JSON bodies
-app.use(express.json());
+// Enable CORS and JSON parsing middleware
+app.use(cors(corsOptions) as express.RequestHandler);
+app.use(express.json() as express.RequestHandler);
 
 // Create pin order endpoint
 app.post('/api/pin-order', async (req: TypedRequest<{ tokenAddress: string; hours: number; cost: number }>, res: TypedResponse) => {
