@@ -1,6 +1,7 @@
-import express, { Application, Request, Response } from "express";
+import express from "express";
+import type { Application, Request, Response } from "express";
 import { Server } from 'http';
-import cors, { CorsOptions } from "cors";
+import cors from "cors";
 import { WebSocketServer, WebSocket } from 'ws';
 import { 
   selectAllTokens, 
@@ -22,14 +23,8 @@ dotenv.config({
   path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development'
 });
 
-interface TypedRequest<T> extends Request {
-  body: T;
-}
-
-interface TypedResponse extends Response {
-  json: (body: any) => TypedResponse;
-  status: (code: number) => TypedResponse;
-}
+type TypedRequestBody<T> = Request<{}, {}, T>;
+type TypedResponse<T = any> = Response<T>;
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
@@ -38,22 +33,26 @@ const server: Server = app.listen(PORT, () => {
 });
 const wss = new WebSocketServer({ server });
 
-const corsOptions: CorsOptions = {
-  origin: process.env.CORS_ORIGINS?.split(',') || [
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
+// Default CORS origins if not specified in environment
+const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+const corsOrigins = process.env.CORS_ORIGINS ? 
+  process.env.CORS_ORIGINS.split(',').filter(Boolean) : 
+  defaultOrigins;
+
+// Enable CORS and JSON parsing middleware
+app.use(cors({
+  origin: corsOrigins,
   methods: ['GET', 'POST', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-// Enable CORS and JSON parsing middleware
-app.use(cors(corsOptions) as express.RequestHandler);
-app.use(express.json() as express.RequestHandler);
+}));
+app.use(express.json());
 
 // Create pin order endpoint
-app.post('/api/pin-order', async (req: TypedRequest<{ tokenAddress: string; hours: number; cost: number }>, res: TypedResponse) => {
+app.post('/api/pin-order', async (
+  req: TypedRequestBody<{ tokenAddress: string; hours: number; cost: number }>,
+  res: TypedResponse
+) => {
   const { tokenAddress, hours, cost } = req.body;
 
   if (!tokenAddress || !hours || !cost) {
@@ -117,9 +116,9 @@ app.get("/api/tokens", async (req, res) => {
 });
 
 // Add voting endpoint
-app.post('/api/vote', async (req, res) => {
+app.post('/api/vote', async (req: TypedRequestBody<{ tokenAddress: string; vote: 1 | -1 }>, res: TypedResponse) => {
     const { tokenAddress, vote } = req.body;
-    const userIp = req.ip;
+    const userIp = req.ip || req.socket.remoteAddress || 'unknown';
 
     if (!tokenAddress || ![1, -1].includes(vote)) {
         return res.status(400).json({ error: 'Invalid vote parameters' });
@@ -146,9 +145,9 @@ app.post('/api/vote', async (req, res) => {
 });
 
 // Get user's vote endpoint
-app.get('/api/vote/:tokenAddress', async (req, res) => {
+app.get('/api/vote/:tokenAddress', async (req: Request, res: TypedResponse) => {
     const { tokenAddress } = req.params;
-    const userIp = req.ip;
+    const userIp = req.ip || req.socket.remoteAddress || 'unknown';
 
     try {
         const vote = await getUserVote(tokenAddress, userIp);

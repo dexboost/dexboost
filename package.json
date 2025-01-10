@@ -17,7 +17,8 @@
   "devDependencies": {
     "@tsconfig/node18": "^18.2.4",
     "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
+    "@types/express": "^4.17.21",
+    "@types/express-serve-static-core": "^5.0.4",
     "@types/luxon": "^3.4.2",
     "@types/node": "^22.10.5",
     "@types/ws": "^8.5.13",
@@ -38,7 +39,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
-    "express-serve-static-core": "^0.1.1",
     "luxon": "^3.5.0",
     "openai": "^4.76.2",
     "sqlite": "^5.1.1",
