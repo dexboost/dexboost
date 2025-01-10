@@ -31,26 +31,26 @@ const app: Application = express();
 const server: Server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Default CORS origins if not specified in environment
-const defaultOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://dexboost.xyz',
-    'http://dexboost.xyz'
-];
+// Get CORS origins from environment or use defaults
 const corsOrigins = process.env.CORS_ORIGINS ? 
-    process.env.CORS_ORIGINS.split(',').filter(Boolean) : 
-    defaultOrigins;
+    process.env.CORS_ORIGINS.split(',') : 
+    ['http://localhost:5173', 'http://localhost:3000', 'https://dexboost.xyz'];
 
-// Enable CORS and JSON parsing middleware
-const corsMiddleware = cors({
-  origin: corsOrigins,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization']
-}) as RequestHandler;
+// Configure CORS
+const corsOptions = {
+    origin: corsOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
 
-app.use(corsMiddleware);
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Enable pre-flight requests for all routes
+app.options('*', cors(corsOptions));
+
 app.use(express.json() as RequestHandler);
 
 // Create pin order endpoint
