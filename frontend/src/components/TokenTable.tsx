@@ -69,7 +69,7 @@ export function TokenTable() {
         return;
       }
 
-      ws = new WebSocket('ws://localhost:2999');
+      ws = new WebSocket(import.meta.env.VITE_WS_URL);
 
       ws.onopen = () => {
         console.log('WebSocket connected');
@@ -179,7 +179,7 @@ export function TokenTable() {
 
   const fetchTokens = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/tokens');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/tokens`);
       if (!response.ok) throw new Error('Failed to fetch tokens');
       const data = await response.json();
       // Parse links for each token if they're strings
@@ -290,7 +290,7 @@ export function TokenTable() {
         return;
       }
 
-      const response = await fetch('http://localhost:3000/api/vote', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/vote`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -325,7 +325,7 @@ export function TokenTable() {
   // Add function to fetch initial votes
   const fetchVotes = async (tokenAddress: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/vote/${tokenAddress}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/vote/${tokenAddress}`);
       if (!response.ok) throw new Error('Failed to fetch votes');
       const data = await response.json();
       setVotes(prev => ({

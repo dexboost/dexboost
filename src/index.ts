@@ -1,20 +1,10 @@
 import { config } from "./config";
 import { startHunter } from "./hunter";
-import { app } from "./server";
-import { WebSocketServer } from 'ws';
+import { server, wss } from "./server";
 import { getTokenVotes, getUserVote, upsertVote, createPinOrder, getPinOrderStatus, getPendingOrders, updateOrderStatus, updateTokenPin, checkAndExpirePins } from "./db";
 import { verifyPayment } from "./transactions";
 
 const PORT = process.env.PORT || 3000;
-const WS_PORT = 2999;
-
-// Create WebSocket server with error handling
-const wss = new WebSocketServer({ 
-    port: WS_PORT,
-    perMessageDeflate: false,
-    clientTracking: true,
-    handleProtocols: () => 'echo-protocol'
-});
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
@@ -25,11 +15,6 @@ wss.on('connection', (ws) => {
     });
     
     ws.on('close', () => console.log('Client disconnected'));
-});
-
-// Error handling for the server itself
-wss.on('error', (error) => {
-    console.error('WebSocket server error:', error);
 });
 
 // Function to broadcast updates to all connected clients
@@ -102,6 +87,7 @@ setInterval(processPayments, 30000);
 startHunter();
 
 // Start the server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    console.log(`WebSocket server is running on ws://localhost:${PORT}`);
 }); 
