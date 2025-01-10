@@ -338,16 +338,12 @@ export async function getPinOrderStatus(orderId: number): Promise<any> {
 export async function getPendingOrders(): Promise<any[]> {
     const db = await getDb();
     try {
-        const orders = await db.all(
-            `SELECT id, tokenAddress, hours, cost, paymentAddress, createdAt, expiresAt 
-             FROM pin_orders 
-             WHERE status = 'pending' AND expiresAt > ?`,
+        return await db.all(
+            `SELECT * FROM pin_orders 
+             WHERE status = 'pending' 
+             AND expiresAt > ?`,
             [Date.now()]
         );
-        return orders;
-    } catch (error) {
-        console.error('Error getting pending orders:', error);
-        return [];
     } finally {
         await db.close();
     }
@@ -403,34 +399,15 @@ export async function updateTokenPin(tokenAddress: string, hours: number): Promi
 // Add a function to check and expire pins
 export async function checkAndExpirePins(): Promise<void> {
     const db = await getDb();
-    const now = Date.now();
     try {
-        // Get tokens with expired pins
-        const expiredTokens = await db.all(
-            `SELECT tokenAddress FROM tokens 
-             WHERE pinnedUntil > 0 AND pinnedUntil < ?`,
+        const now = Date.now();
+        await db.run(
+            `UPDATE pin_orders 
+             SET status = 'expired' 
+             WHERE status = 'paid' 
+             AND paidAt + (hours * 3600 * 1000) < ?`,
             [now]
         );
-
-        // Reset pinnedUntil for expired tokens
-        if (expiredTokens.length > 0) {
-            await db.run(
-                `UPDATE tokens 
-                 SET pinnedUntil = 0 
-                 WHERE pinnedUntil > 0 AND pinnedUntil < ?`,
-                [now]
-            );
-
-            // Broadcast updates for expired pins
-            expiredTokens.forEach(token => {
-                broadcast({
-                    type: 'PIN_EXPIRED',
-                    tokenAddress: token.tokenAddress
-                });
-            });
-        }
-    } catch (error) {
-        console.error('Error checking pin expiration:', error);
     } finally {
         await db.close();
     }
@@ -465,4 +442,20 @@ export async function canTokenBePinned(): Promise<boolean> {
 function generatePaymentAddress(): string {
   const keypair = Keypair.generate();
   return keypair.publicKey.toString();
+}
+
+// Update order status and set paidAt timestamp
+export async function markOrderAsPaid(orderId: number): Promise<void> {
+    const db = await getDb();
+    try {
+        const now = Date.now();
+        await db.run(
+            `UPDATE pin_orders 
+             SET status = 'paid', paidAt = ? 
+             WHERE id = ?`,
+            [now, orderId]
+        );
+    } finally {
+        await db.close();
+    }
 }
