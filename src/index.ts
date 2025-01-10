@@ -1,6 +1,6 @@
-import { config } from "./config";
-import { startHunter } from "./hunter";
-import { server, wss } from "./server";
+import { config } from "./config.js";
+import { startHunter } from "./hunter.js";
+import { server, wss } from "./server.js";
 import { getTokenVotes, getUserVote, upsertVote, createPinOrder, getPinOrderStatus, getPendingOrders, updateOrderStatus, updateTokenPin, checkAndExpirePins } from "./db";
 import { verifyPayment } from "./transactions";
 
