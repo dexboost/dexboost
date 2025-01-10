@@ -1,5 +1,5 @@
 {
-  "name": "solanatokenhunter",
+  "name": "dexboost",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/app.js",
@@ -8,7 +8,10 @@
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "test": "npx tsx src/tests/index.ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "build-vps": "rm -rf dist && tsc",
+    "start-vps": "node dist/index.js",
+    "dev-vps": "tsx watch src/index.ts"
   },
   "keywords": [],
   "author": "https://x.com/digbenjamins",
