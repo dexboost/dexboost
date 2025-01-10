@@ -32,10 +32,15 @@ const server: Server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Default CORS origins if not specified in environment
-const defaultOrigins = ['http://localhost:5173', 'http://localhost:3000'];
+const defaultOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://dexboost.xyz',
+    'http://dexboost.xyz'
+];
 const corsOrigins = process.env.CORS_ORIGINS ? 
-  process.env.CORS_ORIGINS.split(',').filter(Boolean) : 
-  defaultOrigins;
+    process.env.CORS_ORIGINS.split(',').filter(Boolean) : 
+    defaultOrigins;
 
 // Enable CORS and JSON parsing middleware
 const corsMiddleware = cors({
