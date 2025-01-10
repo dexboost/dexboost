@@ -1,7 +1,7 @@
 import express from "express";
 import type { Application, Request, Response, RequestHandler } from "express";
 import type { ParamsDictionary } from "express-serve-static-core";
-import { Server } from 'http';
+import { Server, createServer } from 'http';
 import cors from "cors";
 import { WebSocketServer, WebSocket } from 'ws';
 import { 
@@ -28,10 +28,7 @@ type TypedRequestBody<T> = Request<ParamsDictionary, any, T>;
 type TypedRequestParams<P extends ParamsDictionary> = Request<P>;
 
 const app: Application = express();
-const PORT = process.env.PORT || 3000;
-const server: Server = app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+const server: Server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Default CORS origins if not specified in environment
