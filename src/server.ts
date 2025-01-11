@@ -14,7 +14,9 @@ import {
   getPendingOrders,
   updateOrderStatus,
   updateTokenPin,
-  canTokenBePinned
+  canTokenBePinned,
+  getDb,
+  initializeDatabase
 } from "./db";
 import { verifyPayment } from "./transactions";
 import dotenv from 'dotenv';
@@ -22,6 +24,12 @@ import dotenv from 'dotenv';
 // Load environment variables based on NODE_ENV
 dotenv.config({
   path: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development'
+});
+
+// Initialize database before starting the server
+initializeDatabase().catch(error => {
+  console.error('Failed to initialize database:', error);
+  process.exit(1);
 });
 
 type TypedRequestBody<T> = Request<ParamsDictionary, any, T>;
@@ -80,15 +88,22 @@ setInterval(async () => {
         if (await canTokenBePinned()) {
           await updateOrderStatus(order.id, 'paid', Date.now());
           await updateTokenPin(order.tokenAddress, order.hours);
-          // Broadcast pin update
-          wss.clients.forEach((client: WebSocket) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify({
-                type: 'PIN_UPDATE',
-                tokenAddress: order.tokenAddress
-              }));
-            }
-          });
+          
+          // Get updated token data
+          const tokens = await selectAllTokens();
+          if (tokens) {
+            const updatedToken = tokens.find(t => t.tokenAddress === order.tokenAddress);
+            
+            // Broadcast pin update with full token data
+            wss.clients.forEach((client: WebSocket) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'PIN_UPDATE',
+                  token: updatedToken
+                }));
+              }
+            });
+          }
         } else {
           // Refund needed - token can't be pinned anymore
           await updateOrderStatus(order.id, 'refund_needed');
@@ -116,24 +131,23 @@ app.get("/api/tokens", async (_req: Request, res: Response) => {
 
 // Add voting endpoint
 app.post('/api/vote', async (
-  req: TypedRequestBody<{ tokenAddress: string; vote: 1 | -1 }>,
+  req: TypedRequestBody<{ tokenAddress: string; vote: 1 | -1; userId: string }>,
   res: Response
 ) => {
-    const { tokenAddress, vote } = req.body;
-    const userIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const { tokenAddress, vote, userId } = req.body;
 
-    if (!tokenAddress || ![1, -1].includes(vote)) {
+    if (!tokenAddress || ![1, -1].includes(vote) || !userId) {
         return res.status(400).json({ error: 'Invalid vote parameters' });
     }
 
     try {
         // Check if user has already voted
-        const existingVote = await getUserVote(tokenAddress, userIp);
+        const existingVote = await getUserVote(tokenAddress, userId);
         if (existingVote !== null) {
             return res.status(400).json({ error: 'You have already voted for this token' });
         }
 
-        const success = await upsertVote(tokenAddress, userIp, vote);
+        const success = await upsertVote(tokenAddress, userId, vote);
         if (success) {
             const votes = await getTokenVotes(tokenAddress);
             res.json(votes);
@@ -147,15 +161,14 @@ app.post('/api/vote', async (
 });
 
 // Get user's vote endpoint
-app.get('/api/vote/:tokenAddress', async (
-  req: TypedRequestParams<{ tokenAddress: string }>,
+app.get('/api/vote/:tokenAddress/:userId', async (
+  req: TypedRequestParams<{ tokenAddress: string; userId: string }>,
   res: Response
 ) => {
-    const { tokenAddress } = req.params;
-    const userIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const { tokenAddress, userId } = req.params;
 
     try {
-        const vote = await getUserVote(tokenAddress, userIp);
+        const vote = await getUserVote(tokenAddress, userId);
         const votes = await getTokenVotes(tokenAddress);
         res.json({ userVote: vote, votes });
     } catch (error) {
@@ -181,6 +194,36 @@ app.get('/api/pin-order/:orderId', async (
     } catch (error) {
         console.error('Error getting pin order status:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get all votes endpoint
+app.get('/api/votes', async (_req: Request, res: Response) => {
+    const db = await getDb();
+    try {
+        const votes = await db.all(`
+            SELECT tokenAddress, 
+                   SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) as upvotes,
+                   SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) as downvotes
+            FROM votes 
+            GROUP BY tokenAddress
+        `);
+        
+        // Convert to object with tokenAddress as key
+        const votesMap = votes.reduce((acc: Record<string, { upvotes: number; downvotes: number }>, curr: { tokenAddress: string; upvotes: number; downvotes: number }) => {
+            acc[curr.tokenAddress] = {
+                upvotes: curr.upvotes || 0,
+                downvotes: curr.downvotes || 0
+            };
+            return acc;
+        }, {});
+        
+        res.json(votesMap);
+    } catch (error) {
+        console.error('Error getting all votes:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        await db.close();
     }
 });
 

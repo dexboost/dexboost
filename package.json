@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
+    "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "test": "npx tsx src/tests/index.ts",
     "clean": "rm -rf dist",
     "build-vps": "rm -rf dist && tsc",
@@ -25,6 +25,7 @@
     "@types/node": "^22.10.5",
     "@types/ws": "^8.5.13",
     "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "eslint": "^9.15.0",
     "globals": "^15.12.0",
     "nodemon": "^3.1.9",
@@ -43,6 +44,7 @@
     "express": "^4.21.2",
     "luxon": "^3.5.0",
     "openai": "^4.76.2",
+    "react-responsive": "^10.0.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "ws": "^8.18.0"

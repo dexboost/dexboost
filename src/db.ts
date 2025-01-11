@@ -2,7 +2,7 @@ import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 import { config } from "./config";
 import { boostAmounts, TokenResponseType, updatedDetailedTokenType } from "./types";
-import { broadcast } from './index.js';
+import { broadcast } from './index';
 import { Keypair } from '@solana/web3.js';
 
 // Helper function to get database connection
@@ -13,35 +13,113 @@ export async function getDb() {
     });
 }
 
+// Initialize all database tables
+export async function initializeDatabase(): Promise<void> {
+    const db = await getDb();
+    try {
+        // Create tokens table
+        await db.exec(`
+            CREATE TABLE IF NOT EXISTS tokens (
+                tokenName TEXT,
+                tokenAddress TEXT PRIMARY KEY,
+                url TEXT,
+                chainId TEXT,
+                icon TEXT,
+                header TEXT,
+                openGraph TEXT,
+                description TEXT,
+                marketCap REAL,
+                amount INTEGER DEFAULT 0,
+                totalAmount INTEGER DEFAULT 0,
+                pairsAvailable INTEGER,
+                dexPair TEXT,
+                currentPrice REAL,
+                liquidity REAL,
+                pairCreatedAt INTEGER,
+                tokenSymbol TEXT,
+                volume24h REAL,
+                volume6h REAL,
+                volume1h REAL,
+                links TEXT,
+                boosted INTEGER,
+                dateAdded INTEGER,
+                pinnedUntil INTEGER
+            );
+        `);
+
+        await db.exec(`
+            CREATE TABLE IF NOT EXISTS votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tokenAddress TEXT NOT NULL,
+                userId TEXT NOT NULL,
+                vote INTEGER NOT NULL CHECK (vote IN (1, -1)),
+                timestamp INTEGER NOT NULL,
+                UNIQUE(tokenAddress, userId)
+            );
+        `);
+
+
+        await db.exec(`
+            CREATE TABLE IF NOT EXISTS pin_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tokenAddress TEXT NOT NULL,
+                hours INTEGER NOT NULL,
+                cost REAL NOT NULL,
+                paymentAddress TEXT NOT NULL,
+                paymentPrivateKey TEXT NOT NULL,
+                status TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                expiresAt INTEGER NOT NULL,
+                paidAt INTEGER,
+                userIp TEXT DEFAULT 'unknown'
+            );
+        `);
+
+        console.log('All database tables initialized successfully');
+    } catch (error) {
+        console.error('Error initializing database:', error);
+        throw error;
+    } finally {
+        await db.close();
+    }
+}
+
 // Tokens
 export async function createTokensTable(database: any): Promise<boolean> {
-  try {
-    await database.exec(`
-      CREATE TABLE IF NOT EXISTS tokens (
-        tokenName TEXT,
-        tokenAddress TEXT PRIMARY KEY,
-        icon TEXT,
-        marketCap REAL,
-        amount INTEGER,
-        totalAmount INTEGER,
-        pairsAvailable INTEGER,
-        dexPair TEXT,
-        currentPrice REAL,
-        liquidity REAL,
-        pairCreatedAt INTEGER,
-        tokenSymbol TEXT,
-        volume24h REAL,
-        volume6h REAL,
-        volume1h REAL,
-        links TEXT,
-        boosted INTEGER
-      );
-    `);
-    return true;
-  } catch (error: any) {
-    console.error("Error creating TokenData table:", error);
-    return false;
-  }
+    try {
+        await database.exec(`
+            CREATE TABLE IF NOT EXISTS tokens (
+                tokenName TEXT,
+                tokenAddress TEXT PRIMARY KEY,
+                url TEXT,
+                chainId TEXT,
+                icon TEXT,
+                header TEXT,
+                openGraph TEXT,
+                description TEXT,
+                marketCap REAL,
+                amount INTEGER DEFAULT 0,
+                totalAmount INTEGER DEFAULT 0,
+                pairsAvailable INTEGER,
+                dexPair TEXT,
+                currentPrice REAL,
+                liquidity REAL,
+                pairCreatedAt INTEGER,
+                tokenSymbol TEXT,
+                volume24h REAL,
+                volume6h REAL,
+                volume1h REAL,
+                links TEXT,
+                boosted INTEGER,
+                dateAdded INTEGER,
+                pinnedUntil INTEGER
+            );
+        `);
+        return true;
+    } catch (error: any) {
+        console.error("Error creating TokenData table:", error);
+        return false;
+    }
 }
 export async function selectAllTokens() {
     const db = await getDb();
@@ -122,11 +200,18 @@ export async function upsertTokenBoost(token: updatedDetailedTokenType): Promise
         );
 
         if (result && typeof result.changes === 'number' && result.changes > 0) {
-            const updatedToken = {
-                ...token,
-                boosted: recordAdded
-            };
-            broadcast(updatedToken);
+            // Get the complete token data including all fields
+            const updatedToken = await db.get('SELECT * FROM tokens WHERE tokenAddress = ?', [token.tokenAddress]);
+            if (updatedToken) {
+                // Parse links back to object
+                updatedToken.links = JSON.parse(updatedToken.links);
+                
+                // Broadcast with type based on whether it's a new token or update
+                broadcast({
+                    type: existingToken ? 'update' : 'NEW_TOKEN',
+                    token: updatedToken
+                });
+            }
             return true;
         }
 
@@ -134,6 +219,8 @@ export async function upsertTokenBoost(token: updatedDetailedTokenType): Promise
     } catch (error) {
         console.error('Error upserting token boost:', error);
         return false;
+    } finally {
+        await db.close();
     }
 }
 export async function selectTokenPresent(token: string): Promise<boolean> {
@@ -211,17 +298,25 @@ export async function getTokenVotes(tokenAddress: string): Promise<{ upvotes: nu
 }
 
 // Add or update a vote
-export async function upsertVote(tokenAddress: string, userIp: string, vote: 1 | -1): Promise<boolean> {
+export async function upsertVote(tokenAddress: string, userId: string, vote: 1 | -1): Promise<boolean> {
     const db = await getDb();
     try {
-        await db.run(
-            `INSERT INTO votes (tokenAddress, userIp, vote, timestamp)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(tokenAddress, userIp) DO UPDATE SET
-             vote = excluded.vote,
-             timestamp = excluded.timestamp`,
-            [tokenAddress, userIp, vote, Date.now()]
-        );
+        // First try to insert
+        try {
+            await db.run(
+                `INSERT INTO votes (tokenAddress, userId, vote, timestamp)
+                 VALUES (?, ?, ?, ?)`,
+                [tokenAddress, userId, vote, Date.now()]
+            );
+        } catch (err) {
+            // If insert fails due to unique constraint, update instead
+            await db.run(
+                `UPDATE votes 
+                 SET vote = ?, timestamp = ?
+                 WHERE tokenAddress = ? AND userId = ?`,
+                [vote, Date.now(), tokenAddress, userId]
+            );
+        }
         
         // Get updated vote counts
         const votes = await getTokenVotes(tokenAddress);
@@ -243,12 +338,12 @@ export async function upsertVote(tokenAddress: string, userIp: string, vote: 1 |
 }
 
 // Get user's vote for a token
-export async function getUserVote(tokenAddress: string, userIp: string): Promise<number | null> {
+export async function getUserVote(tokenAddress: string, userId: string): Promise<number | null> {
     const db = await getDb();
     try {
         const result = await db.get(
-            `SELECT vote FROM votes WHERE tokenAddress = ? AND userIp = ?`,
-            [tokenAddress, userIp]
+            `SELECT vote FROM votes WHERE tokenAddress = ? AND userId = ?`,
+            [tokenAddress, userId]
         );
         return result ? result.vote : null;
     } catch (error) {
@@ -266,10 +361,6 @@ export async function createPinOrder(
     cost: number,
     userIp: string
 ): Promise<any> {
-    if (!(await canTokenBePinned())) {
-        throw new Error('Maximum number of pinned tokens reached (3). Please wait for a pin to expire.');
-    }
-
     const db = await getDb();
     try {
         // Generate payment keypair
@@ -376,8 +467,18 @@ export async function updateOrderStatus(
 export async function updateTokenPin(tokenAddress: string, hours: number): Promise<boolean> {
     const db = await getDb();
     const now = Date.now();
-    const pinnedUntil = now + (hours * 60 * 60 * 1000);
     try {
+        // Get current pin status
+        const currentToken = await db.get(
+            'SELECT pinnedUntil FROM tokens WHERE tokenAddress = ?',
+            [tokenAddress]
+        );
+
+        // Calculate new pin expiry time
+        const currentPinnedUntil = currentToken?.pinnedUntil || 0;
+        const baseTime = currentPinnedUntil > now ? currentPinnedUntil : now;
+        const newPinnedUntil = baseTime + (hours * 60 * 60 * 1000);
+
         await db.run(
             `UPDATE tokens 
              SET boosted = ?, 
@@ -385,8 +486,18 @@ export async function updateTokenPin(tokenAddress: string, hours: number): Promi
                  totalAmount = totalAmount + 1,
                  pinnedUntil = ?
              WHERE tokenAddress = ?`,
-            [now, pinnedUntil, tokenAddress]
+            [now, newPinnedUntil, tokenAddress]
         );
+
+        // Get updated token data and broadcast
+        const updatedToken = await db.get('SELECT * FROM tokens WHERE tokenAddress = ?', [tokenAddress]);
+        if (updatedToken) {
+            broadcast({
+                type: 'BOOST_UPDATE',
+                token: updatedToken
+            });
+        }
+
         return true;
     } catch (error) {
         console.error('Error updating token pin:', error);
@@ -434,8 +545,7 @@ export async function getPinnedTokensCount(): Promise<number> {
 
 // Check if token can be pinned
 export async function canTokenBePinned(): Promise<boolean> {
-  const pinnedCount = await getPinnedTokensCount();
-  return pinnedCount < 3;
+  return true; // Allow unlimited pins
 }
 
 // Generate a new Solana address for payments
