@@ -13,7 +13,7 @@ export const config = {
     ],
     settings: {
         api_get_timeout: 10000,
-        db_name_tracker: '/home/dexboost/database.db',
+        db_name_tracker: '/var/www/api/dexboost/database.db',
         frontend_url: 'https://dexboost.xyz',
         api_url: 'https://api.dexboost.xyz',
         dex_to_track: "raydium",
