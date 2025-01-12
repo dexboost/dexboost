@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useReducer } from 'react';
 import {
   Table,
   TableBody,
@@ -17,7 +17,7 @@ import {
   PopoverTrigger,
 } from "./ui/popover";
 import { formatNumber, getSocialIcon } from '../lib/utils';
-import { TokenTableProps } from '../lib/types';
+import { TokenTableProps, Token } from '../lib/types';
 
 export function TokenTable({
   tokens,
@@ -41,7 +41,6 @@ export function TokenTable({
   const wsRef = useRef<WebSocket | null>(null);
   const maxRetries = 5;
   const { toast } = useToast();
-  const [currentTime, setCurrentTime] = useState(Date.now());
   const nowRef = useRef(Date.now());
   const [prevPositions, setPrevPositions] = useState<Record<string, number>>({});
   const [animatingRows, setAnimatingRows] = useState<Set<string>>(new Set());
@@ -49,52 +48,106 @@ export function TokenTable({
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastMessageTimeRef = useRef<number>(Date.now());
 
-  // Update time every second instead of every minute
+  // Debounced search query
+  const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
+
+  // Update debounced value after delay
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Separate memoized filters for better performance
+  const filteredTokens = useMemo(() => {
+    if (!debouncedQuery) return tokens;
+    const query = debouncedQuery.toLowerCase();
+    
+    // Create lookup arrays for faster searching
+    const addressMatch = [];
+    const nameMatch = [];
+    const symbolMatch = [];
+    
+    for (const token of tokens) {
+      const address = token.tokenAddress.toLowerCase();
+      const name = token.tokenName.toLowerCase();
+      const symbol = token.tokenSymbol.toLowerCase();
+      
+      if (address.includes(query)) {
+        addressMatch.push(token);
+      } else if (name.includes(query)) {
+        nameMatch.push(token);
+      } else if (symbol.includes(query)) {
+        symbolMatch.push(token);
+      }
+    }
+    
+    // Combine matches in priority order
+    return [...addressMatch, ...nameMatch, ...symbolMatch];
+  }, [tokens, debouncedQuery]);
+
+  // Cache vote scores to avoid recalculation
+  const voteScores = useMemo(() => {
+    if (sortBy !== 'votes') return null;
+    const scores = new Map();
+    for (const token of filteredTokens) {
+      const tokenVotes = votes[token.tokenAddress] || { upvotes: 0, downvotes: 0 };
+      scores.set(token.tokenAddress, tokenVotes.upvotes - tokenVotes.downvotes);
+    }
+    return scores;
+  }, [filteredTokens, votes, sortBy]);
+
+  // Separate memoized sorting with optimizations
+  const filteredAndSortedTokens = useMemo(() => {
+    const now = nowRef.current;
+    const pinnedTokens = [];
+    const unpinnedTokens = [];
+
+    // Split tokens into pinned and unpinned for faster sorting
+    for (const token of filteredTokens) {
+      if (token.pinnedUntil > now) {
+        pinnedTokens.push(token);
+      } else {
+        unpinnedTokens.push(token);
+      }
+    }
+
+    // Sort function with cached vote scores
+    const sortTokens = (tokens: Token[]) => {
+      return tokens.sort((a: Token, b: Token) => {
+        if (sortBy === 'time') {
+          return b.boosted - a.boosted;
+        } else if (sortBy === 'votes' && voteScores) {
+          const aScore = voteScores.get(a.tokenAddress) || 0;
+          const bScore = voteScores.get(b.tokenAddress) || 0;
+          return bScore === aScore 
+            ? b.totalAmount - a.totalAmount 
+            : bScore - aScore;
+        } else {
+          return b.totalAmount === a.totalAmount 
+            ? b.boosted - a.boosted 
+            : b.totalAmount - a.totalAmount;
+        }
+      });
+    };
+
+    // Sort pinned and unpinned tokens separately
+    return [...sortTokens(pinnedTokens), ...sortTokens(unpinnedTokens)];
+  }, [filteredTokens, sortBy, voteScores]);
+
+  // Update time less frequently for better performance
   useEffect(() => {
     const interval = setInterval(() => {
       nowRef.current = Date.now();
-      setCurrentTime(Date.now()); // This will trigger a re-render
-    }, 1000); // Changed from 60000 to 1000
+      // Force re-render to update time displays
+      forceUpdate();
+    }, 5000); // Update every 5 seconds instead of every second
     return () => clearInterval(interval);
   }, []);
 
-  // Memoize filteredAndSortedTokens to prevent unnecessary recalculations
-  const filteredAndSortedTokens = useMemo(() => {
-    return [...tokens]
-      .filter(token => {
-        if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return (
-          token.tokenAddress.toLowerCase().includes(query) ||
-          token.tokenName.toLowerCase().includes(query) ||
-          token.tokenSymbol.toLowerCase().includes(query)
-        );
-      })
-      .sort((a, b) => {
-        const aIsPinned = a.pinnedUntil > currentTime;
-        const bIsPinned = b.pinnedUntil > currentTime;
-
-        if (aIsPinned === bIsPinned) {
-          if (sortBy === 'time') {
-            return b.boosted - a.boosted;
-          } else if (sortBy === 'votes') {
-            const aVotes = votes[a.tokenAddress] || { upvotes: 0, downvotes: 0 };
-            const bVotes = votes[b.tokenAddress] || { upvotes: 0, downvotes: 0 };
-            const aScore = aVotes.upvotes - aVotes.downvotes;
-            const bScore = bVotes.upvotes - bVotes.downvotes;
-            return bScore === aScore 
-              ? b.totalAmount - a.totalAmount 
-              : bScore - aScore;
-          } else {
-            return b.totalAmount === a.totalAmount 
-              ? b.boosted - a.boosted 
-              : b.totalAmount - a.totalAmount;
-          }
-        }
-
-        return bIsPinned ? 1 : -1;
-      });
-  }, [tokens, searchQuery, sortBy, votes, currentTime]);
+  // Force re-render helper
+  const [, forceUpdate] = useReducer(x => x + 1, 0);
 
   const handleVote = async (tokenAddress: string, vote: 1 | -1) => {
     try {
@@ -330,8 +383,8 @@ export function TokenTable({
                   }
                 }
 
-                // Force a time update to ensure "time ago" is fresh
-                setCurrentTime(Date.now());
+                // Force a re-render to update time displays
+                forceUpdate();
                 return newTokens;
               });
             } else if (data.type === 'VOTE_UPDATE') {

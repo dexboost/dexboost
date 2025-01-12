@@ -17,7 +17,7 @@ export const config = {
         frontend_url: 'https://dexboost.xyz',
         api_url: 'https://api.dexboost.xyz',
         dex_to_track: "raydium",
-        min_boost_amount: 100,
+        min_boost_amount: 10,
         chains_to_track: ["solana"],
         ignore_pump_fun: false,
         hunter_timeout: 5000

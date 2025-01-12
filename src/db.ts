@@ -322,12 +322,28 @@ export async function upsertVote(tokenAddress: string, userId: string, vote: 1 |
         // Get updated vote counts
         const votes = await getTokenVotes(tokenAddress);
         
-        // Broadcast the update
-        broadcast({
-            type: 'VOTE_UPDATE',
-            tokenAddress,
-            votes
-        });
+        // Get the complete token data
+        const token = await db.get('SELECT * FROM tokens WHERE tokenAddress = ?', [tokenAddress]);
+        if (token) {
+            // Parse links back to object
+            token.links = JSON.parse(token.links);
+            
+            // Broadcast both vote update and token update
+            broadcast({
+                type: 'VOTE_UPDATE',
+                tokenAddress,
+                votes
+            });
+            
+            // Also broadcast token update to ensure all clients have latest data
+            broadcast({
+                type: 'update',
+                token: {
+                    ...token,
+                    votes
+                }
+            });
+        }
         
         return true;
     } catch (error) {

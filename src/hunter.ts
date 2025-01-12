@@ -450,7 +450,14 @@ async function generateCelebrationImage(token: TokenResponseType, tokenDetails: 
       quality: 100,
       type: 'png',
       puppeteerArgs: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        executablePath: '/usr/bin/chromium',  // Add this line
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+        ],
       },
       waitUntil: 'networkidle0'
     });
