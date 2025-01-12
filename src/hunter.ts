@@ -450,7 +450,7 @@ async function generateCelebrationImage(token: TokenResponseType, tokenDetails: 
       quality: 100,
       type: 'png',
       puppeteerArgs: {
-        executablePath: '/usr/bin/chromium-browser',
+        executablePath: '/usr/bin/google-chrome',
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
