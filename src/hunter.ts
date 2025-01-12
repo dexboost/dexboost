@@ -458,8 +458,7 @@ async function generateCelebrationImage(token: TokenResponseType, tokenDetails: 
           '--disable-gpu',
           '--disable-software-rasterizer',
           '--headless',
-          '--disable-extensions',
-          '--remote-debugging-port=9222'
+          '--disable-extensions'
         ],
       },
       waitUntil: 'networkidle0'
