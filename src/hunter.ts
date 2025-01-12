@@ -450,13 +450,16 @@ async function generateCelebrationImage(token: TokenResponseType, tokenDetails: 
       quality: 100,
       type: 'png',
       puppeteerArgs: {
-        executablePath: '/usr/bin/chromium',  // Add this line
+        executablePath: '/usr/bin/chromium',
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-software-rasterizer',
+          '--headless',
+          '--disable-extensions',
+          '--remote-debugging-port=9222'
         ],
       },
       waitUntil: 'networkidle0'
