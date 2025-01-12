@@ -4,6 +4,7 @@ import { config } from "./config";
 import { boostAmounts, TokenResponseType, updatedDetailedTokenType } from "./types";
 import { broadcast } from './index';
 import { Keypair } from '@solana/web3.js';
+import { getEndpointData } from './hunter';
 
 // Helper function to get database connection
 export async function getDb() {
@@ -468,9 +469,9 @@ export async function updateTokenPin(tokenAddress: string, hours: number): Promi
     const db = await getDb();
     const now = Date.now();
     try {
-        // Get current pin status
+        // Get current pin status and token data
         const currentToken = await db.get(
-            'SELECT pinnedUntil FROM tokens WHERE tokenAddress = ?',
+            'SELECT pinnedUntil, links FROM tokens WHERE tokenAddress = ?',
             [tokenAddress]
         );
 
@@ -479,19 +480,96 @@ export async function updateTokenPin(tokenAddress: string, hours: number): Promi
         const baseTime = currentPinnedUntil > now ? currentPinnedUntil : now;
         const newPinnedUntil = baseTime + (hours * 60 * 60 * 1000);
 
+        // Get the token endpoint from config
+        const tokenEndpoint = config.endpoints.find(e => e.name === "get-token");
+        if (!tokenEndpoint) {
+            console.error('Token endpoint not found in config');
+            return false;
+        }
+
+        // Fetch fresh token data
+        const freshData = await getEndpointData(`${tokenEndpoint.url}${tokenAddress}`);
+        if (!freshData || !freshData.pairs) {
+            console.error('Failed to fetch fresh token data');
+            return false;
+        }
+
+        // Find the correct DEX pair
+        const dexPair = freshData.pairs.find((pair: any) => pair.dexId === config.settings.dex_to_track);
+        if (!dexPair) {
+            console.error('No matching DEX pair found');
+            return false;
+        }
+
+        // Filter and combine social links from fresh data
+        const websites = dexPair.info?.websites || [];
+        const socials = dexPair.info?.socials || [];
+        interface Link {
+            type?: string;
+            url?: string;
+        }
+        const newLinks = [
+            ...(websites.filter((link: Link) => link?.url?.includes('http')).slice(0, 1).map((link: Link) => ({ type: 'website', url: link.url })) || []),
+            ...(socials.filter((link: Link) => {
+                const type = link?.type?.toLowerCase() || '';
+                const url = link?.url?.toLowerCase() || '';
+                return (type === 'telegram' || type === 'twitter' ||
+                       url.includes('t.me') || url.includes('twitter.com'));
+            }).map((link: Link) => {
+                let type = link.type?.toLowerCase() || '';
+                if (type !== 'telegram' && type !== 'twitter') {
+                    if (link.url?.includes('t.me')) type = 'telegram';
+                    if (link.url?.includes('twitter.com')) type = 'twitter';
+                }
+                return { type, url: link.url };
+            }) || [])
+        ];
+
+        // Update token with all fresh data
         await db.run(
             `UPDATE tokens 
-             SET boosted = ?, 
+             SET boosted = ?,
                  amount = amount + 1,
                  totalAmount = totalAmount + 1,
-                 pinnedUntil = ?
+                 pinnedUntil = ?,
+                 marketCap = ?,
+                 currentPrice = ?,
+                 liquidity = ?,
+                 volume24h = ?,
+                 volume6h = ?,
+                 volume1h = ?,
+                 links = ?,
+                 header = ?,
+                 openGraph = ?,
+                 description = ?,
+                 tokenName = ?,
+                 tokenSymbol = ?
              WHERE tokenAddress = ?`,
-            [now, newPinnedUntil, tokenAddress]
+            [
+                now,
+                newPinnedUntil,
+                dexPair.marketCap || 0,
+                dexPair.priceUsd ? parseFloat(dexPair.priceUsd) : 0,
+                dexPair.liquidity?.usd || 0,
+                dexPair.volume?.h24 || 0,
+                dexPair.volume?.h6 || 0,
+                dexPair.volume?.h1 || 0,
+                JSON.stringify(newLinks),
+                dexPair.info?.header || '',
+                dexPair.info?.openGraph || '',
+                dexPair.info?.description || '',
+                dexPair.baseToken.name || tokenAddress,
+                dexPair.baseToken.symbol || "N/A",
+                tokenAddress
+            ]
         );
 
-        // Get updated token data and broadcast
+        // Get complete updated token data and broadcast
         const updatedToken = await db.get('SELECT * FROM tokens WHERE tokenAddress = ?', [tokenAddress]);
         if (updatedToken) {
+            // Parse links back to object
+            updatedToken.links = JSON.parse(updatedToken.links);
+            
             broadcast({
                 type: 'BOOST_UPDATE',
                 token: updatedToken
@@ -565,6 +643,81 @@ export async function markOrderAsPaid(orderId: number): Promise<void> {
              WHERE id = ?`,
             [now, orderId]
         );
+    } finally {
+        await db.close();
+    }
+}
+
+// Delete non-PumpFun tokens
+export async function deleteNonPumpFunTokens(): Promise<boolean> {
+    const db = await getDb();
+    try {
+        // Delete all tokens where tokenAddress doesn't end with 'pump'
+        await db.run(`
+            DELETE FROM tokens 
+            WHERE LOWER(tokenAddress) NOT LIKE '%pump'
+        `);
+        
+        // Also delete their associated votes
+        await db.run(`
+            DELETE FROM votes 
+            WHERE tokenAddress IN (
+                SELECT tokenAddress 
+                FROM tokens 
+                WHERE LOWER(tokenAddress) NOT LIKE '%pump'
+            )
+        `);
+
+        console.log('Successfully deleted all non-PumpFun tokens');
+        return true;
+    } catch (error) {
+        console.error('Error deleting non-PumpFun tokens:', error);
+        return false;
+    } finally {
+        await db.close();
+    }
+}
+
+// Delete tokens that haven't been updated in 24 hours
+export async function deleteOldTokens(): Promise<void> {
+    const db = await getDb();
+    try {
+        const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+        
+        // Get tokens to be deleted for notification
+        const tokensToDelete = await db.all(
+            `SELECT tokenAddress, tokenName, tokenSymbol FROM tokens WHERE boosted < ?`,
+            [twentyFourHoursAgo]
+        );
+
+        // Delete old tokens
+        await db.run(
+            `DELETE FROM tokens WHERE boosted < ?`,
+            [twentyFourHoursAgo]
+        );
+
+        // Delete associated votes
+        await db.run(
+            `DELETE FROM votes WHERE tokenAddress NOT IN (SELECT tokenAddress FROM tokens)`
+        );
+
+        // Notify about deleted tokens
+        for (const token of tokensToDelete) {
+            broadcast({
+                type: 'TOKEN_DELETED',
+                token: {
+                    tokenAddress: token.tokenAddress,
+                    tokenName: token.tokenName,
+                    tokenSymbol: token.tokenSymbol
+                }
+            });
+        }
+
+        if (tokensToDelete.length > 0) {
+            console.log(`Deleted ${tokensToDelete.length} tokens older than 24 hours`);
+        }
+    } catch (error) {
+        console.error('Error deleting old tokens:', error);
     } finally {
         await db.close();
     }

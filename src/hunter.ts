@@ -3,9 +3,12 @@ import axios from "axios";
 import { DateTime } from "luxon";
 import { config } from "./config"; // Configuration parameters for our hunter
 import { RugResponse, TokenResponseType, detailedTokenResponseType, dexEndpoint, updatedDetailedTokenType } from "./types";
-import { selectTokenBoostAmounts, upsertTokenBoost } from "./db";
+import { selectTokenBoostAmounts, upsertTokenBoost, deleteOldTokens } from "./db";
 import { red, green, yellow, blue } from 'colorette';
 import { getRugCheck } from "./transactions";
+import nodeHtmlToImage from 'node-html-to-image';
+import path from 'path';
+import fs from 'fs';
 
 // Load environment variables from the .env file
 dotenv.config();
@@ -13,20 +16,20 @@ dotenv.config();
 // Helper function to get data from endpoints
 export async function getEndpointData(url: string): Promise<false | any> {
   try {
-    console.log(`Fetching data from endpoint: ${url}`);
+    // console.log(`Fetching data from endpoint: ${url}`);
     const response = await axios.get(url, {
       timeout: config.axios?.get_timeout || 10000,
     });
 
     if (!response.data) {
-      console.log('No data received from endpoint');
+      // console.log('No data received from endpoint');
       return false;
     }
 
     // If this is the boosts endpoint, validate the data structure
     if (url.includes('token-boosts/latest')) {
       if (!Array.isArray(response.data)) {
-        console.log('Invalid data format from boosts endpoint - expected array');
+        // console.log('Invalid data format from boosts endpoint - expected array');
         return false;
       }
       
@@ -42,7 +45,7 @@ export async function getEndpointData(url: string): Promise<false | any> {
       return validTokens;
     }
 
-    console.log(`Received data from endpoint: ${url}`);
+    // console.log(`Received data from endpoint: ${url}`);
     return response.data;
   } catch (error) {
     console.error('Error fetching endpoint data:', error);
@@ -57,6 +60,9 @@ export async function startHunter() {
   if (firstRun) {
     console.clear();
     console.log("Started. Waiting for tokens...");
+    
+    // Delete old tokens on startup
+    await deleteOldTokens();
   }
 
   async function main() {
@@ -68,6 +74,13 @@ export async function startHunter() {
       if (endpoints.length === 0) {
         console.log('No endpoints configured. Please check your configuration.');
         return;
+      }
+
+      // Delete old tokens every hour
+      const currentHour = new Date().getHours();
+      const currentMinute = new Date().getMinutes();
+      if (currentMinute === 0) { // Run at the start of every hour
+        await deleteOldTokens();
       }
 
       console.log(`\nChecking ${endpoints.length} endpoints for new tokens...`);
@@ -103,13 +116,13 @@ export async function startHunter() {
                 try {
                   // Verify chain
                   if (!chains.includes(token.chainId.toLowerCase())) {
-                    console.log(`Skipping token ${token.tokenAddress} - chain ${token.chainId} not tracked`);
+                    // console.log(`Skipping token ${token.tokenAddress} - chain ${token.chainId} not tracked`);
                     continue;
                   }
 
-                  // Handle Exceptions
-                  if (token.tokenAddress.trim().toLowerCase().endsWith("pump") && config.settings.ignore_pump_fun) {
-                    console.log(`Skipping pump token ${token.tokenAddress}`);
+                  // Only process PumpFun tokens
+                  if (!token.tokenAddress.trim().toLowerCase().endsWith("pump")) {
+                    // console.log(`Skipping non-PumpFun token ${token.tokenAddress}`);
                     continue;
                   }
 
@@ -134,6 +147,9 @@ export async function startHunter() {
                       console.log('Failed to get token details');
                       continue;
                     }
+
+                    // Check if token has reached 500 boosts
+                 
 
                     // Extract information from returned data
                     const detailedTokensData: detailedTokenResponseType = newTokenData;
@@ -193,6 +209,11 @@ export async function startHunter() {
                       volume6h: dexPair.volume?.h6 || 0,
                       volume1h: dexPair.volume?.h1 || 0
                     };
+
+                    if (token.amount === 500) {
+                      console.log(`🎉 Token ${updatedTokenProfile.tokenName} has reached 500 boosts! Generating celebration image...`);
+                      await generateCelebrationImage(token, newTokenData);
+                    }
 
                     // Add or update Record
                     const x = await upsertTokenBoost(updatedTokenProfile);
@@ -301,4 +322,152 @@ export async function startHunter() {
   await main().catch((error) => {
     console.error('Fatal error in hunter:', error);
   });
+}
+
+async function generateCelebrationImage(token: TokenResponseType, tokenDetails: detailedTokenResponseType) {
+  try {
+    // Create images directory if it doesn't exist
+    const imagesDir = path.join(__dirname, '..', 'public', 'celebrations');
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
+    }
+
+    const dexPair = tokenDetails.pairs.find((pair) => pair.dexId === config.settings.dex_to_track);
+    if (!dexPair) return;
+
+    const html = `
+      <html>
+        <head>
+          <style>
+            :root {
+              --background: 0 0% 3.9%;
+              --foreground: 0 0% 98%;
+              --card: 0 0% 3.9%;
+              --card-foreground: 0 0% 98%;
+              --popover: 0 0% 3.9%;
+              --popover-foreground: 0 0% 98%;
+              --primary: 0 72.2% 50.6%;
+              --primary-foreground: 0 85.7% 97.3%;
+              --secondary: 0 0% 14.9%;
+              --secondary-foreground: 0 0% 98%;
+              --muted: 0 0% 14.9%;
+              --muted-foreground: 0 0% 63.9%;
+              --accent: 0 0% 14.9%;
+              --accent-foreground: 0 0% 98%;
+              --destructive: 0 62.8% 30.6%;
+              --destructive-foreground: 0 0% 98%;
+              --border: 0 0% 14.9%;
+              --input: 0 0% 14.9%;
+              --ring: 0 72.2% 50.6%;
+              --radius: 0.5rem;
+            }
+            body {
+              width: 1200px;
+              height: 630px;
+              margin: 0;
+              padding: 40px;
+              background: hsl(var(--background));
+              color: hsl(var(--foreground));
+              font-family: system-ui, -apple-system, sans-serif;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              text-align: center;
+            }
+            .container {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 24px;
+              background: hsl(var(--card));
+              padding: 48px;
+              border-radius: var(--radius);
+              border: 1px solid hsl(var(--border));
+            }
+            .icon {
+              width: 128px;
+              height: 128px;
+              border-radius: 50%;
+              object-fit: cover;
+              border: 4px solid hsl(var(--primary));
+            }
+            .token-name {
+              font-size: 64px;
+              font-weight: 700;
+              color: hsl(var(--foreground));
+              margin: 0;
+            }
+            .boost-count {
+              font-size: 96px;
+              font-weight: 800;
+              color: hsl(var(--primary));
+              margin: 0;
+              line-height: 1;
+            }
+            .stats {
+              font-size: 24px;
+              color: hsl(var(--muted-foreground));
+              display: flex;
+              gap: 32px;
+            }
+            .stat {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+            }
+            .stat-value {
+              color: hsl(var(--foreground));
+              font-weight: 600;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            ${token.icon ? `<img src="${token.icon}" class="icon" alt="Token Icon" />` : ''}
+            <div class="token-name">${dexPair.baseToken.name || token.tokenAddress}</div>
+            <div class="">Has been boosted by</div>
+            <div class="boost-count">⚡ 500 BOOSTS</div>
+            <div class="stats">
+              <div class="stat">
+                <span>Market Cap</span>
+                <span class="stat-value">$${formatNumber(dexPair.marketCap || 0)}</span>
+              </div>
+              <div class="stat">
+                <span>24h Volume</span>
+                <span class="stat-value">$${formatNumber(dexPair.volume?.h24 || 0)}</span>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const outputPath = path.join(imagesDir, `${token.tokenAddress}-500.png`);
+    await nodeHtmlToImage({
+      output: outputPath,
+      html,
+      quality: 100,
+      type: 'png',
+      puppeteerArgs: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      },
+      waitUntil: 'networkidle0'
+    });
+
+    console.log(`🎨 Generated celebration image for ${dexPair.baseToken.name} at ${outputPath}`);
+    return outputPath;
+  } catch (error) {
+    console.error('Error generating celebration image:', error);
+    return null;
+  }
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(2) + 'M';
+  } else if (num >= 1000) {
+    return (num / 1000).toFixed(2) + 'K';
+  }
+  return num.toFixed(2);
 }

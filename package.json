@@ -43,8 +43,10 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "luxon": "^3.5.0",
+    "node-html-to-image": "^5.0.0",
     "openai": "^4.76.2",
     "react-responsive": "^10.0.0",
+    "sharp": "^0.33.5",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "ws": "^8.18.0"

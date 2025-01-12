@@ -37,12 +37,26 @@ export function TokenTable({
 }: TokenTableProps) {
   const [wsRetries, setWsRetries] = useState(0);
   const [isManualClose, setIsManualClose] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const maxRetries = 5;
   const { toast } = useToast();
+  const [currentTime, setCurrentTime] = useState(Date.now());
   const nowRef = useRef(Date.now());
   const [prevPositions, setPrevPositions] = useState<Record<string, number>>({});
   const [animatingRows, setAnimatingRows] = useState<Set<string>>(new Set());
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastMessageTimeRef = useRef<number>(Date.now());
+
+  // Update time every second instead of every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      nowRef.current = Date.now();
+      setCurrentTime(Date.now()); // This will trigger a re-render
+    }, 1000); // Changed from 60000 to 1000
+    return () => clearInterval(interval);
+  }, []);
 
   // Memoize filteredAndSortedTokens to prevent unnecessary recalculations
   const filteredAndSortedTokens = useMemo(() => {
@@ -57,9 +71,8 @@ export function TokenTable({
         );
       })
       .sort((a, b) => {
-        const now = Date.now();
-        const aIsPinned = a.pinnedUntil > now;
-        const bIsPinned = b.pinnedUntil > now;
+        const aIsPinned = a.pinnedUntil > currentTime;
+        const bIsPinned = b.pinnedUntil > currentTime;
 
         if (aIsPinned === bIsPinned) {
           if (sortBy === 'time') {
@@ -81,7 +94,7 @@ export function TokenTable({
 
         return bIsPinned ? 1 : -1;
       });
-  }, [tokens, searchQuery, sortBy, votes]);
+  }, [tokens, searchQuery, sortBy, votes, currentTime]);
 
   const handleVote = async (tokenAddress: string, vote: 1 | -1) => {
     try {
@@ -233,45 +246,60 @@ export function TokenTable({
     setPrevPositions(newPositions);
   }, [filteredAndSortedTokens]);
 
-  // Update nowRef every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      nowRef.current = Date.now();
-    }, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Add WebSocket connection setup
   useEffect(() => {
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-
-    const getBackoffTime = (retryCount: number) => {
-      return Math.min(1000 * Math.pow(2, retryCount), 30000);
-    };
-
     const connectWebSocket = () => {
-      if (isManualClose) return;
+      if (wsRef.current?.readyState === WebSocket.OPEN || isConnecting) {
+        return;
+      }
+
+      setIsConnecting(true);
+      console.log('Connecting to WebSocket...');
 
       try {
-        const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+        // Use environment-specific WebSocket URL
+        const wsUrl = import.meta.env.DEV 
+          ? 'ws://localhost:3001' // Development WebSocket URL
+          : (import.meta.env.VITE_WS_URL || 'wss://api.dexboost.xyz'); // Production WebSocket URL
         
-        // Close existing connection if any
-        if (wsRef.current) {
-          wsRef.current.close();
-        }
+        console.log('Using WebSocket URL:', wsUrl);
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
 
-        wsRef.current = new WebSocket(wsUrl);
-        console.log('Attempting WebSocket connection...');
-
-        wsRef.current.onopen = () => {
-          console.log('WebSocket connected successfully');
+        ws.onopen = () => {
+          console.log('WebSocket connected');
+          setIsConnecting(false);
           setWsRetries(0);
           setError(null);
+          lastMessageTimeRef.current = Date.now();
+
+          // Start heartbeat
+          if (heartbeatIntervalRef.current) {
+            clearInterval(heartbeatIntervalRef.current);
+          }
+          heartbeatIntervalRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping' }));
+              
+              // Check if we haven't received any message for too long
+              const timeSinceLastMessage = Date.now() - lastMessageTimeRef.current;
+              if (timeSinceLastMessage > 45000) { // 45 seconds
+                console.log('No message received for too long, reconnecting...');
+                ws.close();
+              }
+            }
+          }, 30000);
         };
 
-        wsRef.current.onmessage = (event) => {
+        ws.onmessage = (event) => {
           try {
+            lastMessageTimeRef.current = Date.now();
             const data = JSON.parse(event.data);
+
+            if (data.type === 'pong') {
+              return;
+            }
+
             if (data.type === 'update' || data.type === 'PIN_UPDATE' || data.type === 'BOOST_UPDATE' || data.type === 'NEW_TOKEN') {
               setTokens(prevTokens => {
                 const updatedTokens = [...prevTokens];
@@ -286,20 +314,25 @@ export function TokenTable({
                   pinnedUntil: data.token.pinnedUntil || (index !== -1 ? updatedTokens[index].pinnedUntil : 0)
                 };
 
+                let newTokens;
                 if (index !== -1) {
+                  // Update existing token
                   updatedTokens[index] = updatedToken;
+                  newTokens = updatedTokens;
                 } else {
+                  // Add new token at the beginning
+                  newTokens = [updatedToken, ...updatedTokens];
                   if (data.type === 'NEW_TOKEN') {
-                    updatedTokens.unshift(updatedToken);
                     toast({
                       title: "New Token Added",
                       description: `${updatedToken.tokenName} (${updatedToken.tokenSymbol}) has been added with ${updatedToken.totalAmount} boosts`,
                     });
-                  } else {
-                    updatedTokens.push(updatedToken);
                   }
                 }
-                return updatedTokens;
+
+                // Force a time update to ensure "time ago" is fresh
+                setCurrentTime(Date.now());
+                return newTokens;
               });
             } else if (data.type === 'VOTE_UPDATE') {
               setVotes(prev => ({
@@ -312,46 +345,58 @@ export function TokenTable({
           }
         };
 
-        wsRef.current.onclose = () => {
-          if (!isManualClose) {
-            console.log('WebSocket connection closed. Attempting to reconnect...');
-            setError('WebSocket connection lost. Reconnecting...');
-            setWsRetries(prev => prev + 1);
+        ws.onclose = () => {
+          console.log('WebSocket connection closed');
+          setIsConnecting(false);
+          wsRef.current = null;
 
-            if (wsRetries < maxRetries) {
-              const backoffTime = getBackoffTime(wsRetries);
-              reconnectTimeout = setTimeout(connectWebSocket, backoffTime);
-            } else {
-              setError('Failed to establish WebSocket connection after multiple attempts');
-              toast({
-                title: "Connection Error",
-                description: "Failed to establish connection. Please refresh the page.",
-                variant: "destructive"
-              });
+          // Clear heartbeat interval
+          if (heartbeatIntervalRef.current) {
+            clearInterval(heartbeatIntervalRef.current);
+          }
+
+          // Attempt to reconnect unless manually closed
+          if (!isManualClose && wsRetries < maxRetries) {
+            if (reconnectTimeoutRef.current) {
+              clearTimeout(reconnectTimeoutRef.current);
             }
+            const backoffTime = Math.min(1000 * Math.pow(2, wsRetries), 30000);
+            reconnectTimeoutRef.current = setTimeout(() => {
+              setWsRetries(prev => prev + 1);
+              connectWebSocket();
+            }, backoffTime);
           }
         };
 
-        wsRef.current.onerror = (error) => {
+        ws.onerror = (error) => {
           console.error('WebSocket error:', error);
+          if (wsRef.current) {
+            wsRef.current.close();
+          }
         };
       } catch (error) {
         console.error('Error setting up WebSocket:', error);
+        setIsConnecting(false);
+        setError('Failed to connect to WebSocket');
       }
     };
 
     connectWebSocket();
 
+    // Cleanup function
     return () => {
       setIsManualClose(true);
       if (wsRef.current) {
         wsRef.current.close();
       }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
       }
     };
-  }, [wsRetries, maxRetries, setError, toast, isManualClose]);
+  }, [wsRetries, isManualClose]);
 
   if (isLoading) return (
     <Card className="w-full">
